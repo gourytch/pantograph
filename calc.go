@@ -1,6 +1,9 @@
 package main
 
-import "math"
+import (
+	"math"
+	"github.com/driusan/de/demodel"
+)
 
 type Position struct {
 	X, Y float64 // координата в пространстве
@@ -9,6 +12,9 @@ type Engine struct {
 	Position         // положение оси двигателя/ведущей тяги в пространстве
 	R        float64 // длина ведущей тяги
 	A        float64 // базовый CCW-поворот тяги от абциссы в радианах
+	Step     float64 // шаг поворота
+	MinVal   int     // минимальное значение шага
+	MaxVal   int     // максимальное значение шага
 }
 
 type Link struct {
