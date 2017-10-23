@@ -4,32 +4,23 @@ import (
 	"math"
 )
 
-type Position struct {
-	X, Y float64 // координата в пространстве
-}
-type Engine struct {
-	Position         // положение оси двигателя/ведущей тяги в пространстве
-	R        float64 // длина ведущей тяги
-	A        float64 // базовый CCW-поворот тяги от абциссы в радианах
-	Step     float64 // шаг поворота
-	MinVal   int     // минимальное значение шага
-	MaxVal   int     // максимальное значение шага
+// работа с координатами //////////////////////////////////////
+
+func (pt Position) Length2() float64 {
+	return pt.X*pt.X + pt.Y*pt.Y
 }
 
-type Link struct {
-	X1, Y1, X2, Y2 float64
+func (pt Position) Length() float64 {
+	return math.Sqrt(pt.Length2())
 }
 
-type Pantograph struct {
-	E1, E2 Engine   // движки
-	L1, L2 float64  // длины ведомых тяг
-	A1, A2 float64  // отклонения ведущих тяг от "нейтрали"
-	N1, N2 Position // вычисленные координаты концов ведущих тяг
-	P1     Position // вычисленная координата инструментального узла
-	P2     Position // вычисленная координата инструментального узла (альтернативная точка)
-	Valid  bool     // True если пантограф находится в разрешенном состоянии
+func Delta(A, B Position) Position {
+	return Position{X: B.X - A.X, Y: B.Y - A.Y}
 }
 
+func Distance(A, B Position) float64 {
+	return Delta(A, B).Length()
+}
 
 func area(A, B, C Position) float64 {
 	return (B.X - A.X) * (C.Y - A.Y) - (B.Y - A.Y) * (C.X - A.X)
@@ -54,43 +45,43 @@ func HasIntersect(A, B, C, D Position) bool {
 // ищем пересечение двух окружностей
 func CircleCross(N1 Position, R1 float64, N2 Position, R2 float64) (P1, P2 Position, Ok bool) {
 	Ok = false
-	Dx := N2.X - N1.X
-	Dy := N2.Y - N1.Y
+	D := Delta(N1, N2)
+	dist2 := D.Length2()
+	dist := math.Sqrt(dist2)
 
-	D2 := Dx*Dx + Dy*Dy
-	D := math.Sqrt(D2)
-
-	if D == 0 {
+	if dist == 0 {
 		return // совпадение осей. вычислить точку не получится
 	}
 
 	// сделаем заглушку позиции в случае разрыва
-	P1.X = N1.X + Dx*R1/D
-	P1.Y = N1.Y + Dy*R1/D
-	P2.X = N2.X - Dx*R2/D
-	P2.Y = N2.Y - Dy*R2/D
+	P1.X = N1.X + D.X*R1/dist
+	P1.Y = N1.Y + D.Y*R1/dist
+	P2.X = N2.X - D.X*R2/dist
+	P2.Y = N2.Y - D.Y*R2/dist
 
 	// теперь вычислим координаты инструментального узла
 	// как точки пересечения двух окружностей
 
 	R12 := R1 * R1
 	R22 := R2 * R2
-	A := (R12 - R22 + D2) / (2 * D)
+	A := (R12 - R22 + dist2) / (2 * dist)
 	A2 := A * A
 	H2 := R12 - A2
 	if H2 < 0 {
 		return
 	}
 	H := math.Sqrt(H2)
-	P2X := N1.X + A*Dx/D
-	P2Y := N1.Y + A*Dy/D
-	P1.X = P2X + (H*Dy)/D
-	P1.Y = P2Y - (H*Dx)/D
-	P2.X = P2X - (H*Dy)/D
-	P2.Y = P2Y + (H*Dx)/D
+	P2X := N1.X + A*D.X/dist
+	P2Y := N1.Y + A*D.Y/dist
+	P1.X = P2X + (H*D.Y)/dist
+	P1.Y = P2Y - (H*D.X)/dist
+	P2.X = P2X - (H*D.Y)/dist
+	P2.Y = P2Y + (H*D.X)/dist
 	Ok = true
 	return
 }
+
+// решение пантографа /////////////////////////////////////////
 
 func (p *Pantograph) Solve() {
 	p.Valid = false // пока у нас не доказано, что всё хорошо - всё плохо.

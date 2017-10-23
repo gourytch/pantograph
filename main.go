@@ -15,12 +15,13 @@ import (
 	)
 
 var (
-	buf  screen.Buffer
-	win  screen.Window
-	tx   screen.Texture
-	Size = image.Pt(800, 800)
-	Bounds = image.Rect(0, 0, Size.X, Size.Y)
+	buf      screen.Buffer
+	win      screen.Window
+	tx       screen.Texture
+	Size     = image.Pt(800, 800)
+	Bounds   = image.Rect(0, 0, Size.X, Size.Y)
 	coverage *image.RGBA
+	use_IK   = true // use inverse kinematic
 )
 
 /*
@@ -47,29 +48,43 @@ var p = &Pantograph{
 }
 */
 
+const NUM_STEPS = 200
+const MAX_ROT = (NUM_STEPS / 10) * (NUM_STEPS / 10)
+const MAX_DIST = 3.0
+const FULL_ANGLE = math.Pi / 2
+const MIN_STEP_VAL = -NUM_STEPS / 2
+const MAX_STEP_VAL = +NUM_STEPS / 2
+
 var p = &Pantograph{
 	E1: Engine{
-		Position: Position{X: 180.0, Y: 500.0},
-		R: 200.0,
-		A: math.Pi / 3,
-		Step: math.Pi / 100,
-		MinVal: -30,
-		MaxVal: +30},
+		Position: Position{X: 200.0, Y: 500.0},
+		R:        200.0,
+		A:        math.Pi / 2,
+		Step:     FULL_ANGLE / NUM_STEPS,
+		MinVal:   MIN_STEP_VAL,
+		MaxVal:   MAX_STEP_VAL},
 	E2: Engine{
-		Position: Position{X: 620.0, Y: 500.0},
-		R: 200.0,
-		A: math.Pi * 2 / 3,
-		Step: math.Pi / 100,
-		MinVal: -30,
-		MaxVal: +30,
-	},
+		Position: Position{X: 600.0, Y: 500.0},
+		R:        200.0,
+		A:        math.Pi / 2,
+		Step:     FULL_ANGLE / NUM_STEPS,
+		MinVal:   MIN_STEP_VAL,
+		MaxVal:   MAX_STEP_VAL},
 	L1: 250.0,
 	L2: 250.0,
 	A1: 0.1,
 	A2: -0.2,
 }
 
-//var drawing = []Position{} // набор точек
+var histCap = 100
+
+type History []int
+
+var hist1 History = make(History, 0, histCap)
+var hist2 History = make(History, 0, histCap)
+
+func (h History) push(a int) {
+}
 
 func render(img *image.RGBA) {
 	p.Solve()
@@ -125,6 +140,33 @@ func render(img *image.RGBA) {
 		gc.SetRGBA(0, 0, 0, 0.2)
 		gc.Stroke()
 	}
+	// рисуем историю доворотов
+	xOffs := p.E1.X - float64(histCap/2)
+	yOffs := p.E1.Y + 50
+
+	for i, v := range hist1 {
+		d := 200.0 * 2 * float64(v) / NUM_STEPS;
+		gc.DrawLine(xOffs+float64(i), yOffs, xOffs+float64(i), yOffs+d)
+		if 0 < d {
+			gc.SetRGBA(1, 0, 0, 1)
+		} else {
+			gc.SetRGBA(0, 0, 1, 1)
+		}
+		gc.Stroke()
+	}
+
+	xOffs = p.E2.X - float64(histCap/2)
+	yOffs = p.E2.Y + 50
+	for i, v := range hist2 {
+		d := 200.0 * 2 * float64(v) / NUM_STEPS;
+		gc.DrawLine(xOffs+float64(i), yOffs, xOffs+float64(i), yOffs+d)
+		if 0 < d {
+			gc.SetRGBA(1, 0, 0, 1)
+		} else {
+			gc.SetRGBA(0, 0, 1, 1)
+		}
+		gc.Stroke()
+	}
 }
 
 func publish() {
@@ -139,6 +181,9 @@ func main() {
 		tx, _ = src.NewTexture(Size)
 		coverage = image.NewRGBA(Bounds)
 		p.Coverage(coverage)
+		p.Evaluate()
+		var matches []Match = nil
+
 		for {
 			switch e := win.NextEvent().(type) {
 			case paint.Event:
@@ -158,9 +203,35 @@ func main() {
 					return
 				}
 			case mouse.Event:
-				p.A1 = math.Pi * float64(e.X-400) / 400
-				p.A2 = math.Pi * float64(e.Y-400) / 400
+				if use_IK {
+					pt := Position{float64(e.X), float64(e.Y)}
+					cur := Match{
+						Projection{
+							int(p.A1 / p.E1.Step),
+							int(p.A2 / p.E2.Step),
+							p.P1},
+						-1,
+						0.0}
+					matches = p.MatchMove(cur, pt, MAX_DIST, MAX_ROT)
+					if 0 < len(matches) {
+						m := matches[0]
+						p.A1 = float64(m.Step1) * p.E1.Step
+						p.A2 = float64(m.Step2) * p.E2.Step
+						ds1 := m.Step1 - cur.Step1
+						ds2 := m.Step2 - cur.Step2
+						if len(hist1) < histCap {
+							hist1 = append(hist1, ds1)
+							hist2 = append(hist2, ds2)
+						} else {
+							hist1 = append(hist1[len(hist1)-histCap:], ds1)
+							hist2 = append(hist2[len(hist2)-histCap:], ds2)
+						}
+					}
 
+				} else {
+					p.A1 = math.Pi * float64(e.X-400) / 400
+					p.A2 = math.Pi * float64(e.Y-400) / 400
+				}
 			}
 		}
 	})
